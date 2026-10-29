@@ -1,3 +1,4 @@
+
 //
 //  AMDMicrophoneEngine.cpp
 //  AMDMicrophone
@@ -38,7 +39,9 @@ bool AMDMicrophoneEngine::createControls()
     if (!control)
         goto Done;
 
-    control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
+    control->setValueChangeHandler(
+        (IOAudioControl::IntValueChangeHandler)gainChangeHandler, this
+    );
     addDefaultAudioControl(control);
     control->release();
 
@@ -133,10 +136,13 @@ bool AMDMicrophoneEngine::initHardware(IOService* provider)
         goto Done;
 
     audioStream = createNewAudioStream(
-        kIOAudioStreamDirectionInput, audioDevice->dmaDescriptor->getBytesNoCopy(), BUFFER_SIZE
+        kIOAudioStreamDirectionInput,
+        audioDevice->dmaDescriptor->getBytesNoCopy(),
+        BUFFER_SIZE
     );
     if (!audioStream)
         goto Done;
+
     addAudioStream(audioStream);
     audioStream->release();
 
@@ -152,13 +158,31 @@ void AMDMicrophoneEngine::stop(IOService* provider)
 }
 
 IOReturn AMDMicrophoneEngine::convertInputSamples(
-    const void* sampleBuf, void* destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames,
-    const IOAudioStreamFormat* streamFormat, IOAudioStream* audioStream
+    const void* sampleBuf, void* destBuf, UInt32 firstSampleFrame,
+    UInt32 numSampleFrames, const IOAudioStreamFormat* streamFormat,
+    IOAudioStream* audioStream
 )
 {
     float* floatDestBuf;
     SInt32* inputBuf32;
     UInt32 firstSample = firstSampleFrame * streamFormat->fNumChannels;
+
+    /*
+     * DC blocker state.
+     *
+     * y[n] = x[n] - x[n-1] + R*y[n-1]
+     *
+     * R = 0.9993 gives a low cutoff of approximately 5 Hz
+     * at 48 kHz, reducing DC offset while preserving speech.
+     *
+     * State persists between conversion calls so the filter
+     * does not restart at every audio buffer boundary.
+     */
+    static float previousInput = 0.0f;
+    static float previousOutput = 0.0f;
+    static bool filterInitialized = false;
+
+    const float dcBlockerR = 0.9993f;
 
     floatDestBuf = (float*)destBuf;
     inputBuf32 = &(((SInt32*)sampleBuf)[firstSample]);
@@ -178,21 +202,46 @@ IOReturn AMDMicrophoneEngine::convertInputSamples(
             sample = (float)*inputBuf32++ / INT32_MAX;
         }
 
+        /*
+         * Remove the DC component before gain and expansion.
+         * Initialize from the first sample to avoid a startup
+         * transient caused by an unknown initial baseline.
+         */
+        if (!filterInitialized) {
+            previousInput = sample;
+            previousOutput = 0.0f;
+            filterInitialized = true;
+            sample = 0.0f;
+        } else {
+            float filteredSample =
+                sample - previousInput + dcBlockerR * previousOutput;
+
+            previousInput = sample;
+            previousOutput = filteredSample;
+            sample = filteredSample;
+        }
+
         sample *= (float)volume / MAX_VOLUME;
 
         level = sample >= 0.0f ? sample : -sample;
-        expanderEnvelope = expanderEnvelope * 0.990f + level * 0.010f;
+        expanderEnvelope =
+            expanderEnvelope * 0.990f + level * 0.010f;
+
         if (expanderEnvelope >= INPUT_EXPANDER_THRESHOLD) {
             targetGain = 1.0f;
         } else {
             targetGain = INPUT_EXPANDER_FLOOR
-                + (1.0f - INPUT_EXPANDER_FLOOR) * expanderEnvelope / INPUT_EXPANDER_THRESHOLD;
+                + (1.0f - INPUT_EXPANDER_FLOOR)
+                    * expanderEnvelope / INPUT_EXPANDER_THRESHOLD;
         }
 
-        if (targetGain > expanderGain)
-            expanderGain += (targetGain - expanderGain) * INPUT_EXPANDER_ATTACK;
-        else
-            expanderGain += (targetGain - expanderGain) * INPUT_EXPANDER_RELEASE;
+        if (targetGain > expanderGain) {
+            expanderGain +=
+                (targetGain - expanderGain) * INPUT_EXPANDER_ATTACK;
+        } else {
+            expanderGain +=
+                (targetGain - expanderGain) * INPUT_EXPANDER_RELEASE;
+        }
 
         sample *= expanderGain;
         sample *= INPUT_SOFTWARE_GAIN;
@@ -207,8 +256,11 @@ IOReturn AMDMicrophoneEngine::convertInputSamples(
         else if (sample < -1.0f)
             sample = -1.0f;
 
-        for (UInt32 channel = 0; channel < streamFormat->fNumChannels; channel++)
+        for (UInt32 channel = 0;
+             channel < streamFormat->fNumChannels;
+             channel++) {
             *floatDestBuf++ = sample;
+        }
     }
 
     return kIOReturnSuccess;
@@ -216,7 +268,8 @@ IOReturn AMDMicrophoneEngine::convertInputSamples(
 
 UInt32 AMDMicrophoneEngine::getCurrentSampleFrame()
 {
-    return (UInt32)(audioDevice->getRelativeByteCount() % BUFFER_SIZE) / FRAME_SIZE;
+    return (UInt32)(audioDevice->getRelativeByteCount() % BUFFER_SIZE)
+        / FRAME_SIZE;
 }
 
 IOReturn AMDMicrophoneEngine::performAudioEngineStart()
@@ -229,7 +282,9 @@ IOReturn AMDMicrophoneEngine::performAudioEngineStart()
     audioDevice->clearDMABuffer();
     audioDevice->initRingBuffer(ACP_MEM_WINDOW_START, BUFFER_SIZE, PERIOD_SIZE);
     audioDevice->writel(0x0, ACP_WOV_PDM_NO_OF_CHANNELS);
-    audioDevice->writel(ACP_PDM_DECIMATION_FACTOR, ACP_WOV_PDM_DECIMATION_FACTOR);
+    audioDevice->writel(
+        ACP_PDM_DECIMATION_FACTOR, ACP_WOV_PDM_DECIMATION_FACTOR
+    );
 
     IOReturn ret = audioDevice->startDMA();
     if (ret != kIOReturnSuccess)
@@ -250,7 +305,9 @@ IOReturn AMDMicrophoneEngine::performAudioEngineStop()
 }
 
 IOReturn AMDMicrophoneEngine::performFormatChange(
-    IOAudioStream* audioStream, const IOAudioStreamFormat* newFormat, const IOAudioSampleRate* newSampleRate
+    IOAudioStream* audioStream,
+    const IOAudioStreamFormat* newFormat,
+    const IOAudioSampleRate* newSampleRate
 )
 {
     IOReturn result = kIOReturnSuccess;
