@@ -14,7 +14,7 @@ This kext brings support for them. Refer [FAQ](#faq) for more information.
 
 ## What's working?
 * Microphone for Renoir-base laptops with digital microphone (aka ACP-based mic), see [this](#check-if-your-laptop-is-equipped-with-an-acp-based-microphone) to identify if your laptop is supported.
-*Barcelo-R base laptops support is confirmed
+* Barcelo-R base laptops support is confirmed.
 
 ## What's not working?
 * This kext may not work for other CPU variants than Renoir and Barcelo-R, such as Raven/Raven2/Fire Flight/Van Gogh/Yellow Carp.
