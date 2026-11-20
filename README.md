@@ -21,8 +21,15 @@ This kext brings support for them. Refer [FAQ](#faq) for more information.
 * Microphone for Renoir-base laptops with digital microphone (aka ACP-based mic), see [this](#check-if-your-laptop-is-equipped-with-an-acp-based-microphone) to identify if your laptop is supported.
 * Barcelo-R base laptops support is confirmed.
 
+| CPU               | STATUS   |
+| ----------------- | ----------
+| AMD Ryzen 5 7530U | Working ✅ |
+| AMD Ryzen 7 7730U | Working ✅ |
+
+
 ## What's not working?
 * This kext may not work for other CPU variants than Renoir and Barcelo-R, such as Raven/Raven2/Fire Flight/Van Gogh/Yellow Carp.
+
 
 
 ## Prerequisites 
